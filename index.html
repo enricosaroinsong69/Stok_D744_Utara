@@ -371,7 +371,10 @@ function parseCSV(text){
 
 /* ---------- ambil data spreadsheet ---------- */
 function gvizUrl(id, sheet){
-  return 'https://docs.google.com/spreadsheets/d/'+id+'/gviz/tq?tqx=out:csv&sheet='+encodeURIComponent(sheet)+'&headers=1&t='+Date.now();
+  /* Tanpa &headers=1: Google mengenali sendiri baris judulnya dan mengirim
+     semua judul kolom apa adanya. Dengan headers=1, judul kolom yang isinya
+     angka (NO, Age, DP) justru dikirim kosong. */
+  return 'https://docs.google.com/spreadsheets/d/'+id+'/gviz/tq?tqx=out:csv&sheet='+encodeURIComponent(sheet)+'&t='+Date.now();
 }
 /* cadangan JSONP: dipakai saat fetch diblokir CORS (mis. dijalankan dari file:///android_asset/) */
 var jsonpN = 0;
@@ -400,7 +403,7 @@ function jsonpSheet(id, sheet){
     };
     s.onerror = function(){ cleanup(); rej(new Error('spreadsheet tidak terjangkau')); };
     s.src = 'https://docs.google.com/spreadsheets/d/'+id+'/gviz/tq?tqx=out:json;responseHandler='+cb+
-            '&sheet='+encodeURIComponent(sheet)+'&headers=1&t='+Date.now();
+            '&sheet='+encodeURIComponent(sheet)+'&t='+Date.now();
     document.head.appendChild(s);
   });
 }
@@ -712,13 +715,19 @@ function findHeadRow(rows){
   return 0;
 }
 
+/* Kolom bantu berisi rumus di kanan tabel dikenali dari dua judul kosong
+   berturut-turut. Satu judul kosong di tengah tabel tidak memotong apa pun. */
+function tableWidth(raw){
+  var n = raw.length;
+  for(var i=5;i<n-1;i++) if(!raw[i] && !raw[i+1]) return i;
+  while(n>0 && !raw[n-1]) n--;
+  return n;
+}
+
 function buildD745(rows){
   var hr = findHeadRow(rows);
   var raw = (rows[hr]||[]).map(function(h){ return String(h==null?'':h).trim(); });
-  /* potong di judul kosong pertama — sisanya kolom bantu */
-  var lebar = raw.length;
-  for(var i=0;i<raw.length;i++){ if(!raw[i]){ lebar=i; break; } }
-  var head = raw.slice(0, lebar);
+  var head = raw.slice(0, tableWidth(raw));
   var map = headIndex(head), body = rows.slice(hr+1);
 
   var iCh = pick(map, KEYS.chassis), iEn = pick(map, KEYS.engine),
