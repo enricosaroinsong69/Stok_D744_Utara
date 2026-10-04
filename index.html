@@ -231,6 +231,14 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
       <div class="filelist" id="filelist"></div>
       <div class="frow" style="margin-top:6px">
         <button class="btn ghost sm" id="clearShip">Hapus semua jadwal kapal</button>
+        <button class="btn ghost sm" id="resendKapal">Kirim ulang ke sheet KAPAL</button>
+      </div>
+      <div style="margin:8px 0 0">
+        <input class="txt" id="kapalUrl" placeholder="Alamat Apps Script untuk menulis ke sheet KAPAL">
+      </div>
+      <div class="note" id="kapalInfo">Nomor rangka dari berkas yang diunggah otomatis ditulis ke sheet KAPAL (kolom D &amp; H). Baris yang sudah ada dilewati.</div>
+      <div class="frow" style="margin-top:6px">
+        <button class="btn ghost sm" id="saveKapalUrl">Simpan alamat</button>
       </div>
     </div>
 
@@ -305,6 +313,10 @@ var DEF = {
   d745Sheet : 'STOCK OKTOBER',
   utaraId : '105Fk4W_ocTGC63iFkHaC_ttMrTznsiluiEQvwUCIQ7s',
   utaraSheet : 'Stok',
+  /* Diisi alamat Web App Apps Script supaya SEMUA pengguna aplikasi ikut
+     menulis ke sheet KAPAL. Dibiarkan kosong = tiap perangkat mengisi sendiri
+     di tab Sumber Data. */
+  kapalUrl : 'https://script.google.com/macros/s/AKfycbw8Humrd25-UYZxn0pb2f0NnJmWfiG1g7uCq3f5X5U-rEGB2MJduDCynOQplTIfaUS1ww/exec',
   plants : ['D740','D741','D743','D744','D745','D761'],
   ttlDays : 30,
   /* Dinaikkan setiap kali sumber bawaan diganti. ID & simpanan lama yang
@@ -507,30 +519,36 @@ function findCols(rows){
   return best;
 }
 
+/* Nomor rangka selalu 17 karakter; nomor mesin lebih pendek.
+   Dipakai untuk memisahkan keduanya saat judul kolom tidak terbaca. */
+function isRangka(t){ return t.length === 17; }
+
 function readShipRows(rows, fileName){
   var cols = findCols(rows);
-  var exact = [], tail = [];
-  function add(v, strong){
+  var exact = [], tail = [], rangka = [];
+  function add(v, strong, asRangka){
     var t = up(v);
     if(!tokOK(t)) return;
     exact.push(t);
     if(strong && t.length>=8) tail.push(t.slice(-8));
+    if(asRangka && isRangka(t)) rangka.push(t);
   }
   if(cols){
     for(var i=cols.row+1;i<rows.length;i++){
       var r = rows[i]||[];
-      if(cols.ch>=0) add(r[cols.ch], true);
-      if(cols.en>=0) add(r[cols.en], true);
+      if(cols.ch>=0) add(r[cols.ch], true, true);
+      if(cols.en>=0) add(r[cols.en], true, false);
     }
   }
   /* selalu sapu seluruh sel sebagai cadangan (cocok persis saja) */
   for(var a=0;a<rows.length;a++){
     var rr = rows[a]||[];
-    for(var b=0;b<rr.length;b++) add(rr[b], false);
+    for(var b=0;b<rr.length;b++) add(rr[b], false, !cols);
   }
   return {
     exact : Array.from(new Set(exact)),
     tail  : Array.from(new Set(tail)),
+    rangka: Array.from(new Set(rangka)),
     header: !!cols
   };
 }
@@ -574,6 +592,106 @@ function shipMeta(fileName, rows){
   return { kapal: kapal||'(kapal tidak terbaca)', tgl: tgl, tujuan: tujuan, eks: eks };
 }
 
+/* ============================================================
+   KIRIM KE SHEET "KAPAL" DI SPREADSHEET
+   Kolom D = nomor rangka, kolom H = nama kapal.
+   Format mengikuti baris terbaru di sheet: KM. Tanto Jaya 24 Sep (KPL)
+   ============================================================ */
+var EKS_KODE = [
+  [/KARYA PUTRA|LOKATIRTA/i, 'KPL'],
+  [/BERTINDO|\bBMU\b/i,     'BMU'],
+  [/SERASI|SELOG/i,          'SELOG'],
+  [/PARANI/i,                'PARANI'],
+  [/\bDSO\b/i,              'DSO']
+];
+var BLN3 = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
+/* "KM TANTO JAYA" -> "Tanto Jaya" */
+function namaKapal(k){
+  return String(k||'').replace(/^(KM|KMP|MV|TB)\.?\s*/i,'')
+    .toLowerCase().replace(/\b([a-z])/g, function(m,c){ return c.toUpperCase(); }).trim();
+}
+/* "24-Sep-2026" -> "24 Sep" */
+function tglKapal(t){
+  var m = String(t||'').match(/^(\d{1,2})-([A-Za-z]{3})/);
+  return m ? (parseInt(m[1],10)+' '+m[2]) : '';
+}
+function labelKapal(f){
+  var nama = namaKapal(f.kapal);
+  if(!nama || /tidak terbaca/i.test(f.kapal||'')) return '';
+  var kode = '';
+  var blob = (f.eks||'')+' '+(f.name||'');
+  for(var i=0;i<EKS_KODE.length;i++) if(EKS_KODE[i][0].test(blob)){ kode = EKS_KODE[i][1]; break; }
+  var tgl = tglKapal(f.tgl);
+  return ('KM. '+nama+(tgl?' '+tgl:'')+(kode?' ('+kode+')':'')).replace(/\s+/g,' ').trim();
+}
+/* berkas lama belum menyimpan daftar rangka — disaring ulang dari panjangnya */
+function rangkaOf(f){
+  if(f.cx && f.cx.length) return f.cx;
+  return (f.tx||[]).filter(isRangka);
+}
+
+function barisKapal(files){
+  var seen = {}, out = [];
+  files.forEach(function(f){
+    var label = labelKapal(f);
+    if(!label) return;
+    rangkaOf(f).forEach(function(r){
+      if(seen[r]) return;
+      seen[r] = 1;
+      out.push([r, label]);
+    });
+  });
+  return out;
+}
+
+function kirimKapal(files, diam){
+  var c = cfg(), url = (c.kapalUrl||'').trim();
+  var baris = barisKapal(files);
+  if(!url){
+    if(!diam) toast('Alamat Apps Script belum diisi di tab Sumber Data');
+    setKapalInfo('Alamat Apps Script belum diisi — baris tidak dikirim.');
+    return Promise.resolve(null);
+  }
+  if(!baris.length){
+    setKapalInfo('Tidak ada nomor rangka yang bisa dikirim.');
+    return Promise.resolve(null);
+  }
+  setKapalInfo('Mengirim '+baris.length+' nomor ke sheet KAPAL…');
+  return fetch(url, {
+    method : 'POST',
+    headers: {'Content-Type':'text/plain;charset=utf-8'},   /* text/plain: tanpa preflight CORS */
+    body   : JSON.stringify({rows: baris})
+  }).then(function(r){ return r.json(); })
+    .then(function(j){
+      if(j && j.ok){
+        var p = j.added+' baris ditambahkan ke sheet KAPAL'+(j.skipped?' · '+j.skipped+' sudah ada':'');
+        setKapalInfo(p+' · '+fmtDMY(new Date()));
+        if(!diam) toast(p);
+      } else {
+        setKapalInfo('Gagal: '+((j&&j.error)||'jawaban tidak dikenali'));
+        if(!diam) toast('Gagal menulis ke sheet KAPAL');
+      }
+      return j;
+    })
+    .catch(function(e){
+      /* WebView dari file:// kadang tidak boleh membaca jawaban — kirim buta */
+      return fetch(url, {method:'POST', mode:'no-cors',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({rows: baris})
+      }).then(function(){
+        setKapalInfo(baris.length+' nomor dikirim (jawaban tidak terbaca) · '+fmtDMY(new Date()));
+        if(!diam) toast('Terkirim — cek sheet KAPAL');
+        return null;
+      }).catch(function(){
+        setKapalInfo('Gagal mengirim: '+e.message);
+        if(!diam) toast('Gagal mengirim ke sheet KAPAL');
+        return null;
+      });
+    });
+}
+function setKapalInfo(t){ var el = $('#kapalInfo'); if(el) el.textContent = t; }
+
 function sheetRows(file){
   return file.arrayBuffer().then(function(buf){
     var wb = XLSX.read(new Uint8Array(buf), {type:'array', cellDates:false, raw:false});
@@ -601,7 +719,8 @@ function addShipFiles(fileList){
         kapal: meta.kapal, tgl: meta.tgl, tujuan: meta.tujuan, eks: meta.eks,
         hdr  : tok.header,
         tx   : tok.exact,
-        tl   : tok.tail
+        tl   : tok.tail,
+        cx   : tok.rangka
       };
     }).catch(function(e){
       console.warn(f.name, e);
@@ -620,6 +739,7 @@ function addShipFiles(fileList){
     renderAll();
     var n = ok.reduce(function(s,f){ return s+f.tx.length; },0);
     toast(ok.length+' berkas tersimpan · '+n+' nomor terbaca');
+    kirimKapal(ok);   /* langsung tulis ke sheet KAPAL */
   });
 }
 
@@ -933,9 +1053,11 @@ function exportCSV(tab){
    MUAT DATA
    ============================================================ */
 function bawaan(){
+  var lama = lsGet(K.cfg) || {};
   return { srcVer:DEF.srcVer,
     d745Id:DEF.d745Id, d745Sheet:DEF.d745Sheet,
-    utaraId:DEF.utaraId, utaraSheet:DEF.utaraSheet };
+    utaraId:DEF.utaraId, utaraSheet:DEF.utaraSheet,
+    kapalUrl: lama.kapalUrl || DEF.kapalUrl || '' };   /* alamat Apps Script tidak ikut direset */
 }
 function cfg(){
   var def = bawaan(), sv = lsGet(K.cfg);
@@ -1020,6 +1142,17 @@ $('#csvUtara').onclick = function(){ exportCSV('utara'); };
 $('#pick').onclick = function(){ $('#file').click(); };
 $('#drop').addEventListener('click', function(e){ if(e.target.id==='drop') $('#file').click(); });
 $('#file').onchange = function(){ addShipFiles(this.files); this.value=''; };
+$('#saveKapalUrl').onclick = function(){
+  var c = cfg();
+  c.kapalUrl = $('#kapalUrl').value.trim();
+  lsSet(K.cfg, c);
+  toast(c.kapalUrl ? 'Alamat disimpan' : 'Alamat dikosongkan');
+  setKapalInfo(c.kapalUrl ? 'Alamat tersimpan. Unggah berkas untuk mencoba.' : 'Alamat Apps Script belum diisi.');
+};
+$('#resendKapal').onclick = function(){
+  if(!SHIP.files.length){ toast('Belum ada berkas jadwal kapal'); return; }
+  kirimKapal(SHIP.files);
+};
 $('#clearShip').onclick = function(){
   if(!SHIP.files.length) return;
   SHIP.files = []; saveShip(); buildShipIndex(); renderShipList(); renderAll(); toast('Jadwal kapal dikosongkan');
@@ -1066,6 +1199,7 @@ function showIds(){
   $('#idUtaraTxt').textContent = 'lembar "'+c.utaraSheet+'"';
   $('#idD745').value  = c.d745Id;   $('#shD745').value  = c.d745Sheet;
   $('#idUtara').value = c.utaraId;  $('#shUtara').value = c.utaraSheet;
+  $('#kapalUrl').value = c.kapalUrl || '';
 }
 
 /* ---------- jalan ---------- */
