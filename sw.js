@@ -1,19 +1,19 @@
 /* Service worker — supaya aplikasi tetap terbuka saat iPhone luring.
    Naikkan angka VER setiap kali index.html diganti, supaya HP menarik versi baru. */
-var VER = 'stok-daihatsu-v6';
+var VER = 'stok-daihatsu-v7';
 
 var SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-512-maskable.png',
-  './icons/apple-touch-icon-180.png',
-  './icons/apple-touch-icon-167.png',
-  './icons/apple-touch-icon-152.png',
-  './icons/apple-touch-icon-120.png',
-  './icons/favicon-32.png'
+  './icon-192.png',
+  './icon-512.png',
+  './icon-512-maskable.png',
+  './apple-touch-icon-180.png',
+  './apple-touch-icon-167.png',
+  './apple-touch-icon-152.png',
+  './apple-touch-icon-120.png',
+  './favicon-32.png'
 ];
 
 self.addEventListener('install', function(e){
