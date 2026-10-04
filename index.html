@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" sizes="152x152" href="icons/apple-touch-icon-152.png">
 <link rel="apple-touch-icon" sizes="120x120" href="icons/apple-touch-icon-120.png">
 <link rel="icon" href="icons/favicon-32.png">
-<title>Stok Daihatsu — D745 &amp; Utara</title>
+<title>Stok Daihatsu — D744 &amp; Utara</title>
 <style>
 :root{
   --navy:#0F2E47; --navy2:#00307D; --blue:#0B4FA6; --red:#E60012;
@@ -171,7 +171,7 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
     <span id="stat"><span class="dot"></span><span id="statTxt">memuat…</span></span>
   </div>
   <nav class="tabbar" id="tabbar">
-    <button data-tab="d745" class="on">Stok D745</button>
+    <button data-tab="d745" class="on">Stok D744</button>
     <button data-tab="utara">Stok Utara</button>
     <button data-tab="sumber">Sumber Data</button>
   </nav>
@@ -179,7 +179,7 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
 
 <div class="wrap">
 
-  <!-- ============ TAB STOK D745 ============ -->
+  <!-- ============ TAB STOK D744 ============ -->
   <section id="pane-d745">
     <div class="panel">
       <div class="frow"><span class="flabel">Type</span><span id="typeD745" style="display:contents"></span></div>
@@ -236,13 +236,16 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
 
     <h3 class="sec">Sumber stok</h3>
     <div class="panel">
-      <div class="kv"><span>Stok D745 — spreadsheet</span><b id="idD745Txt"></b></div>
-      <div style="margin:6px 0"><input class="txt" id="idD745" placeholder="ID spreadsheet Stok D745"></div>
+      <div class="kv"><span>Stok D744 — spreadsheet</span><b id="idD745Txt"></b></div>
+      <div style="margin:6px 0"><input class="txt" id="idD745" placeholder="ID atau tautan spreadsheet Stok D744"></div>
+      <div style="margin:6px 0"><input class="txt" id="shD745" placeholder="nama lembar, mis. STOCK OKTOBER"></div>
       <div class="kv"><span>Stok Utara — spreadsheet</span><b id="idUtaraTxt"></b></div>
-      <div style="margin:6px 0"><input class="txt" id="idUtara" placeholder="ID spreadsheet Stok Utara"></div>
+      <div style="margin:6px 0"><input class="txt" id="idUtara" placeholder="ID atau tautan spreadsheet Stok Utara"></div>
+      <div style="margin:6px 0"><input class="txt" id="shUtara" placeholder="nama lembar, mis. Stok"></div>
       <div class="frow" style="margin-top:6px">
         <button class="btn" id="reload">Muat ulang data</button>
-        <button class="btn ghost sm" id="saveId">Simpan ID</button>
+        <button class="btn ghost sm" id="saveId">Simpan sumber</button>
+        <button class="btn ghost sm" id="resetId">Kembali ke bawaan</button>
         <button class="btn ghost sm" id="pickStok">Muat dari berkas stok</button>
         <input type="file" id="fileStok" accept=".csv,.xls,.xlsx" style="display:none">
       </div>
@@ -251,7 +254,7 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
 
     <h3 class="sec">Simpanan di perangkat</h3>
     <div class="panel">
-      <div class="kv"><span>Stok D745</span><b id="szD745">—</b></div>
+      <div class="kv"><span>Stok D744</span><b id="szD744">—</b></div>
       <div class="kv"><span>Stok Utara</span><b id="szUtara">—</b></div>
       <div class="kv"><span>Jadwal kapal</span><b id="szShip">—</b></div>
       <div class="frow" style="margin-top:6px">
@@ -291,7 +294,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 </script>
 <script>
 /* ============================================================
-   STOK DAIHATSU — D745 & UTARA
+   STOK DAIHATSU — D744 & UTARA
    ============================================================ */
 (function(){
 'use strict';
@@ -303,7 +306,10 @@ var DEF = {
   utaraId : '105Fk4W_ocTGC63iFkHaC_ttMrTznsiluiEQvwUCIQ7s',
   utaraSheet : 'Stok',
   plants : ['D740','D741','D743','D744','D745','D761'],
-  ttlDays : 30
+  ttlDays : 30,
+  /* Dinaikkan setiap kali sumber bawaan diganti. ID & simpanan lama yang
+     tersisa di perangkat otomatis dibuang supaya tidak menimpa sumber baru. */
+  srcVer : 2
 };
 var K = { d745:'stok_d745_v1', utara:'stok_utara_v1', ship:'jadwal_kapal_v1', cfg:'stok_cfg_v1' };
 
@@ -907,7 +913,7 @@ function exportCSV(tab){
     })));
   });
   var txt = '\uFEFF'+out.join('\n');
-  var name = (tab==='d745'?'Stok_D745_':'Stok_Utara_')+new Date().toISOString().slice(0,10)+'.csv';
+  var name = (tab==='d745'?'Stok_D744_':'Stok_Utara_')+new Date().toISOString().slice(0,10)+'.csv';
   if(window.AndroidSaver && AndroidSaver.saveText){ AndroidSaver.saveText(name, txt); toast('Tersimpan di folder Download'); return; }
   var b = new Blob([txt], {type:'text/csv;charset=utf-8'});
   var a = document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; a.click();
@@ -917,7 +923,24 @@ function exportCSV(tab){
 /* ============================================================
    MUAT DATA
    ============================================================ */
-function cfg(){ return Object.assign({d745Id:DEF.d745Id, utaraId:DEF.utaraId}, lsGet(K.cfg)||{}); }
+function bawaan(){
+  return { srcVer:DEF.srcVer,
+    d745Id:DEF.d745Id, d745Sheet:DEF.d745Sheet,
+    utaraId:DEF.utaraId, utaraSheet:DEF.utaraSheet };
+}
+function cfg(){
+  var def = bawaan(), sv = lsGet(K.cfg);
+  if(!sv || sv.srcVer !== DEF.srcVer){
+    /* sumber bawaan berubah — ID lama dan simpanan lama dibuang */
+    if(sv){ try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); }catch(e){} }
+    lsSet(K.cfg, def);
+    return def;
+  }
+  return Object.assign(def, sv);
+}
+function srcKey(c, tab){
+  return DEF.srcVer+'|'+(tab==='d745' ? c.d745Id+'|'+c.d745Sheet : c.utaraId+'|'+c.utaraSheet);
+}
 function setStat(cls, txt){ $('#stat').innerHTML = '<span class="dot '+cls+'"></span>'+esc(txt); }
 
 function loadAll(force){
@@ -925,18 +948,26 @@ function loadAll(force){
   setStat('', 'memuat…');
 
   function useCache(tab){
-    var s = lsGet(tab==='d745'?K.d745:K.utara);
-    if(s && s.rows){ (tab==='d745'?buildD745:buildUtara)(s.rows);
-      info.push((tab==='d745'?'D745':'Utara')+': simpanan '+(s.at?fmtDMY(new Date(s.at)):'')); return true; }
+    var s = lsGet(tab==='d745'?K.d745:K.utara), nama = tab==='d745'?'D744':'Utara';
+    /* simpanan dari sumber lain tidak dipakai, supaya data lama tidak muncul lagi */
+    if(s && s.rows && s.src === srcKey(c, tab)){
+      (tab==='d745'?buildD745:buildUtara)(s.rows);
+      info.push(nama+': simpanan '+(s.at?fmtDMY(new Date(s.at)):''));
+      return true;
+    }
     return false;
   }
 
-  var p1 = fetchSheet(c.d745Id, DEF.d745Sheet).then(function(rows){
-    buildD745(rows); lsSet(K.d745, {at:Date.now(), rows:rows}); info.push('D745: '+(rows.length-1)+' baris daring');
-  }).catch(function(e){ if(!useCache('d745')) info.push('D745 gagal: '+e.message); });
+  var p1 = fetchSheet(c.d745Id, c.d745Sheet).then(function(rows){
+    buildD745(rows);
+    lsSet(K.d745, {at:Date.now(), src:srcKey(c,'d745'), rows:rows});
+    info.push('D744: '+(rows.length-1)+' baris daring dari lembar "'+c.d745Sheet+'"');
+  }).catch(function(e){ if(!useCache('d745')) info.push('D744 gagal: '+e.message); });
 
-  var p2 = fetchSheet(c.utaraId, DEF.utaraSheet).then(function(rows){
-    buildUtara(rows); lsSet(K.utara, {at:Date.now(), rows:rows}); info.push('Utara: '+(rows.length-1)+' baris daring');
+  var p2 = fetchSheet(c.utaraId, c.utaraSheet).then(function(rows){
+    buildUtara(rows);
+    lsSet(K.utara, {at:Date.now(), src:srcKey(c,'utara'), rows:rows});
+    info.push('Utara: '+(rows.length-1)+' baris daring dari lembar "'+c.utaraSheet+'"');
   }).catch(function(e){ if(!useCache('utara')) info.push('Utara gagal: '+e.message); });
 
   return Promise.all([p1,p2]).then(function(){
@@ -944,13 +975,13 @@ function loadAll(force){
     var online = navigator.onLine;
     var ok = DATA.d745.rows.length || DATA.utara.rows.length;
     setStat(ok?(online?'ok':'off'):'err',
-      ok ? (DATA.d745.rows.length+' D745 · '+DATA.utara.rows.length+' Utara'+(online?'':' · luring')) : 'data tidak tersedia');
+      ok ? (DATA.d745.rows.length+' D744 · '+DATA.utara.rows.length+' Utara'+(online?'':' · luring')) : 'data tidak tersedia');
     $('#srcInfo').innerHTML = info.map(esc).join('<br>');
   });
 }
 
 function updateSizes(){
-  $('#szD745').textContent = lsSize(K.d745);
+  $('#szD744').textContent = lsSize(K.d745);
   $('#szUtara').textContent = lsSize(K.utara);
   $('#szShip').textContent = lsSize(K.ship);
 }
@@ -986,12 +1017,22 @@ $('#clearShip').onclick = function(){
 };
 
 $('#reload').onclick = function(){ loadAll(true).then(function(){ toast('Data dimuat ulang'); }); };
+function idOf(v){ var m = String(v||'').match(/\/d\/([a-zA-Z0-9_-]{20,})/); return m ? m[1] : String(v||'').trim(); }
 $('#saveId').onclick = function(){
   var c = cfg();
-  var a = $('#idD745').value.trim(), b = $('#idUtara').value.trim();
-  if(a) c.d745Id = a.replace(/.*\/d\/([^\/]+).*/, '$1');
-  if(b) c.utaraId = b.replace(/.*\/d\/([^\/]+).*/, '$1');
-  lsSet(K.cfg, c); showIds(); loadAll(true); toast('ID disimpan');
+  var a = idOf($('#idD745').value), b = idOf($('#idUtara').value);
+  var sa = $('#shD745').value.trim(), sb = $('#shUtara').value.trim();
+  if(a) c.d745Id = a;
+  if(b) c.utaraId = b;
+  if(sa) c.d745Sheet = sa;
+  if(sb) c.utaraSheet = sb;
+  c.srcVer = DEF.srcVer;
+  try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); }catch(e){}
+  lsSet(K.cfg, c); showIds(); loadAll(true); toast('Sumber disimpan');
+};
+$('#resetId').onclick = function(){
+  try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); }catch(e){}
+  lsSet(K.cfg, bawaan()); showIds(); loadAll(true); toast('Kembali ke sumber bawaan');
 };
 $('#pickStok').onclick = function(){ $('#fileStok').click(); };
 $('#fileStok').onchange = function(){
@@ -999,8 +1040,9 @@ $('#fileStok').onchange = function(){
   if(!f) return;
   sheetRows(f).then(function(rows){
     var head = (rows[0]||[]).map(nk).join('|');
-    if(/\bplant\b/.test(head) && /functionallocation/.test(head)){ buildUtara(rows); lsSet(K.utara,{at:Date.now(),rows:rows}); toast('Stok Utara dimuat dari berkas'); }
-    else { buildD745(rows); lsSet(K.d745,{at:Date.now(),rows:rows}); toast('Stok D745 dimuat dari berkas'); }
+    var c = cfg();
+    if(/\bplant\b/.test(head) && /functionallocation/.test(head)){ buildUtara(rows); lsSet(K.utara,{at:Date.now(),src:srcKey(c,'utara'),rows:rows}); toast('Stok Utara dimuat dari berkas'); }
+    else { buildD745(rows); lsSet(K.d745,{at:Date.now(),src:srcKey(c,'d745'),rows:rows}); toast('Stok D744 dimuat dari berkas'); }
     renderAll();
   }).catch(function(e){ toast('Berkas tidak terbaca'); });
 };
@@ -1011,10 +1053,10 @@ $('#wipe').onclick = function(){
 
 function showIds(){
   var c = cfg();
-  $('#idD745Txt').textContent = c.d745Id.slice(0,12)+'…';
-  $('#idUtaraTxt').textContent = c.utaraId.slice(0,12)+'…';
-  $('#idD745').value = c.d745Id;
-  $('#idUtara').value = c.utaraId;
+  $('#idD745Txt').textContent  = 'lembar "'+c.d745Sheet+'"';
+  $('#idUtaraTxt').textContent = 'lembar "'+c.utaraSheet+'"';
+  $('#idD745').value  = c.d745Id;   $('#shD745').value  = c.d745Sheet;
+  $('#idUtara').value = c.utaraId;  $('#shUtara').value = c.utaraSheet;
 }
 
 /* ---------- jalan ---------- */
