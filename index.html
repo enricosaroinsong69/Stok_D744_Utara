@@ -298,8 +298,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 /* ---------- konfigurasi ---------- */
 var DEF = {
-  d745Id : '1B4m8K6-isUQ8ETYas1lRE4CYvDK65QCR5Bo8VJuxtwc',
-  d745Sheet : 'STOK D745',
+  d745Id : '1v7pgBFKlBVu17DnfwbMhgTAmKi0_mRBAHDLVCmAi5mc',
+  d745Sheet : 'STOCK OKTOBER',
   utaraId : '105Fk4W_ocTGC63iFkHaC_ttMrTznsiluiEQvwUCIQ7s',
   utaraSheet : 'Stok',
   plants : ['D740','D741','D743','D744','D745','D761'],
@@ -335,7 +335,12 @@ function asDate(v){
   return null;
 }
 function fmtDMY(d){ return (''+d.getDate()).padStart(2,'0')+'-'+BLN[d.getMonth()]; }
-function locText(v){ var d=asDate(v); return d?fmtDMY(d):String(v==null?'':v).trim(); }
+function locText(v){ var d=asDate(v); return d?fmtDMY(d):cl(v); }
+/* nilai galat rumus spreadsheet ditampilkan sebagai kosong */
+function cl(v){
+  var t = String(v==null?'':v).trim();
+  return /^#(N\/A|VALUE!|REF!|DIV\/0!|NAME\?|NULL!|NUM!|ERROR!)/i.test(t) ? '' : t;
+}
 
 /* ---------- pengurai CSV ---------- */
 function parseCSV(text){
@@ -416,42 +421,15 @@ function pick(map, names){
   return -1;
 }
 
-/* daftar kolom tab Stok D745 (urutan tampilan) */
-var COL_D745 = [
-  {t:'No',                  k:['no','nomor'],                          w:'num'},
-  {t:'Material Description',k:['materialdescription','materialdesc','deskripsi','description']},
-  {t:'Color Description',   k:['warna','colordescription','sapcolordescription','colordesc']},
-  {t:'Serial Number',       k:['norangka','nomorrangka','rangka','serialnumber','chassis','chasis'], mono:true},
-  {t:'No Mesin',            k:['nomesin','nomormesin','engineno','engine','mesin'], mono:true},
-  {t:'Lokasi',              k:['lokasi','functionallocation','location'], loc:true},
-  {t:'Umur',                k:['umur','age'], w:'num'},
-  {t:'RRN No.',             k:['rrnno','rrnnumber','rrn']},
-  {t:'Customer',            k:['customer','namacustomer']},
-  {t:'Salesman',            k:['salesman','namasales','sales']},
-  {t:'%DP',                 k:['pctdp','pctdppengajuan'], w:'c'},
-  {t:'Via',                 k:['via']},
-  {t:'NIK',                 k:['nik','constructionyear'], w:'c'},
-  {t:'Paket',               k:['paket']},
-  {t:'UPDATE PROSES',       k:['updateproses','proses']},
-  {t:'FULL DP/FULL CASH',   k:['fulldpfullcash','fulldp','fullcash']},
-  {t:'Tgl SPK',             k:['tglspk','tanggalspk']},
-  {t:'Keterangan',          k:['keterangan']},
-  {t:'LEASING',             k:['leasing']},
-  {t:'NAMA SO',             k:['namaso']},
-  {t:'Jadwal Kapal',        k:['jadwalkapal','jadwal'], ship:true},
-  {t:'Type',                k:['type','material','kodematerial']},
-  {t:'Kode Warna',          k:['kodewarna','sapcolorid','colorid']}
-];
-
 /* kolom kunci untuk logika (kedua tab) */
 var KEYS = {
-  chassis : ['norangka','nomorrangka','rangka','serialnumber','chassis','chasis'],
+  chassis : ['noka','norangka','nomorrangka','rangka','serialnumber','chassis','chasis'],
   engine  : ['nomesin','nomormesin','engineno','engine','mesin'],
   loc     : ['lokasi','functionallocation','location'],
-  desc    : ['materialdescription','materialdesc','deskripsi','description'],
+  desc    : ['materialdescription','materialdesc','deskripsi','description','type'],
   plant   : ['plant','cabang','outlet'],
-  typeunit: ['typeunit','simplename','tipe'],
-  jadwal  : ['jadwalkapal','jadwal']
+  typeunit: ['typeunit','simplename','unit','tipe'],
+  jadwal  : ['jadwalkapal','jadwal','kapal']
 };
 
 /* ---------- grup type dari Material Description ---------- */
@@ -470,9 +448,15 @@ var TYPEDEF = [
   ['GM PU',     /(GRAN\s?MAX|GRANMAX)/],
   ['HI-MAX',    /HI\s?-?\s?MAX/]
 ];
+var TYPEFIX = {GMPU:'GM PU', GMMB:'GM MB', GMBV:'GM BV', GRANMAXPU:'GM PU',
+  GRANMAXMB:'GM MB', GRANMAXBV:'GM BV', ROCKYHEV:'ROCKY HEV', ROCKYHV:'ROCKY HEV'};
 function typeOf(desc, given){
-  var g = String(given==null?'':given).trim();
-  if(g) return g.toUpperCase();
+  var g = cl(given);
+  if(g){
+    g = g.toUpperCase();
+    var f = TYPEFIX[g.replace(/[^A-Z0-9]+/g,'')];
+    return f || g;
+  }
   var d = String(desc==null?'':desc).toUpperCase()
           .replace(/^(ALL NEW|NEW|ASTRADAIHATSU|ASTRA DAIHATSU|DAIHATSU)\s+/g,'')
           .replace(/^(ALL NEW|NEW|ASTRADAIHATSU|ASTRA DAIHATSU|DAIHATSU)\s+/g,'');
@@ -706,22 +690,60 @@ var FILT = {
 };
 var LIMIT = 600;
 
+/* Judul kolom lembar "STOCK OKTOBER" ada di baris ke-2, dan di kanan kolom
+   terakhir masih ada kolom bantu berisi rumus. Jadi baris judul dicari sendiri,
+   lalu daftar kolom dipotong di judul kosong yang pertama. */
+function findHeadRow(rows){
+  var KEY = /^(no|type|warna|noka|norangka|serialnumber|nomesin|lokasi|age|umur|rrn|customer|sales|salesman|leasing|kapal|materialdescription|plant)$/;
+  for(var i=0;i<Math.min(rows.length,12);i++){
+    var r = rows[i]||[], isi=0, kena=0;
+    for(var j=0;j<r.length;j++){
+      var k = nk(r[j]);
+      if(k){ isi++; if(KEY.test(k)) kena++; }
+    }
+    if(isi>=5 && kena>=3) return i;
+  }
+  return 0;
+}
+
 function buildD745(rows){
-  var head = rows[0], map = headIndex(head), body = rows.slice(1);
-  var cols = COL_D745.map(function(c){ var o=Object.assign({},c); o.i = pick(map, c.k); return o; });
+  var hr = findHeadRow(rows);
+  var raw = (rows[hr]||[]).map(function(h){ return String(h==null?'':h).trim(); });
+  /* potong di judul kosong pertama — sisanya kolom bantu */
+  var lebar = raw.length;
+  for(var i=0;i<raw.length;i++){ if(!raw[i]){ lebar=i; break; } }
+  var head = raw.slice(0, lebar);
+  var map = headIndex(head), body = rows.slice(hr+1);
+
   var iCh = pick(map, KEYS.chassis), iEn = pick(map, KEYS.engine),
       iLo = pick(map, KEYS.loc), iDs = pick(map, KEYS.desc),
       iTu = pick(map, KEYS.typeunit), iJd = pick(map, KEYS.jadwal);
-  var out = body.map(function(r){
-    var desc = iDs>=0 ? r[iDs] : '';
-    return {
+
+  var cols = [];
+  head.forEach(function(h,i){
+    if(i === iTu) return;                       /* kolom grup type dipakai jadi tombol, tidak ditabelkan */
+    var k = nk(h);
+    cols.push({ t:h, i:i,
+      loc  : i === iLo,
+      ship : i === iJd,                         /* kolom Kapal sekaligus hasil cocok berkas jadwal kapal */
+      mono : i === iCh || i === iEn,
+      w    : /^(age|umur|no|nomor)$/.test(k) ? 'num' : ''
+    });
+  });
+  if(iJd < 0) cols.push({ t:'Jadwal Kapal', i:-1, ship:true });
+
+  var out = [];
+  body.forEach(function(r){
+    var ch = iCh>=0?cl(r[iCh]):'', ds = iDs>=0?cl(r[iDs]):'';
+    if(!ch && !ds) return;
+    out.push({
       r : r,
-      ch: iCh>=0?r[iCh]:'', en: iEn>=0?r[iEn]:'',
-      lo: iLo>=0?r[iLo]:'',
-      jd: iJd>=0?String(r[iJd]||'').trim():'',
-      ty: typeOf(desc, iTu>=0?r[iTu]:'')
-    };
-  }).filter(function(o){ return String(o.ch||'').trim() || String(o.r[1]||'').trim(); });
+      ch: ch, en: iEn>=0?cl(r[iEn]):'',
+      lo: iLo>=0?cl(r[iLo]):'',
+      jd: iJd>=0?cl(r[iJd]):'',
+      ty: typeOf(ds, iTu>=0?r[iTu]:'')
+    });
+  });
   DATA.d745.head=head; DATA.d745.rows=out; DATA.d745.cols=cols;
 }
 
@@ -778,7 +800,7 @@ function filtered(tab){
     if(F.type.size && !F.type.has(o.ty)) return false;
     if(tab==='utara' && F.plant.size && !F.plant.has(o.plant)) return false;
     if(q){
-      var hay = o.r.join(' ').toLowerCase()+' '+shipFor(o).toLowerCase();
+      var hay = o.r.map(cl).join(' ').toLowerCase()+' '+shipFor(o).toLowerCase();
       var parts = q.split(/\s+/);
       for(var i=0;i<parts.length;i++) if(hay.indexOf(parts[i])<0) return false;
     }
@@ -827,7 +849,7 @@ function renderTable(tab){
       if(c.ship) v = jd ? '<span class="tag ship">'+esc(jd)+'</span>' : '';
       else {
         var raw = (c.i>=0 && c.i<o.r.length) ? o.r[c.i] : '';
-        v = c.loc ? esc(locText(raw)) : esc(String(raw==null?'':raw).trim());
+        v = c.loc ? esc(locText(raw)) : esc(cl(raw));
       }
       var k = (c.stick?' stick':'') + (c.w==='num'?' num':'') + (c.w==='c'?' c':'');
       return '<td'+(k?' class="'+k.trim()+'"':'')+(c.mono?' style="font-family:ui-monospace,Menlo,Consolas,monospace"':'')+'>'+v+'</td>';
@@ -881,7 +903,7 @@ function exportCSV(tab){
     out.push(line(D.cols.map(function(c){
       if(c.ship) return shipFor(o);
       var raw = (c.i>=0 && c.i<o.r.length)?o.r[c.i]:'';
-      return c.loc ? locText(raw) : raw;
+      return c.loc ? locText(raw) : cl(raw);
     })));
   });
   var txt = '\uFEFF'+out.join('\n');
@@ -977,7 +999,7 @@ $('#fileStok').onchange = function(){
   if(!f) return;
   sheetRows(f).then(function(rows){
     var head = (rows[0]||[]).map(nk).join('|');
-    if(/plant/.test(head) && /functionallocation/.test(head)){ buildUtara(rows); lsSet(K.utara,{at:Date.now(),rows:rows}); toast('Stok Utara dimuat dari berkas'); }
+    if(/\bplant\b/.test(head) && /functionallocation/.test(head)){ buildUtara(rows); lsSet(K.utara,{at:Date.now(),rows:rows}); toast('Stok Utara dimuat dari berkas'); }
     else { buildD745(rows); lsSet(K.d745,{at:Date.now(),rows:rows}); toast('Stok D745 dimuat dari berkas'); }
     renderAll();
   }).catch(function(e){ toast('Berkas tidak terbaca'); });
