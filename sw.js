@@ -1,6 +1,6 @@
 /* Service worker — supaya aplikasi tetap terbuka saat iPhone luring.
    Naikkan angka VER setiap kali index.html diganti, supaya HP menarik versi baru. */
-var VER = 'stok-daihatsu-v1';
+var VER = 'stok-daihatsu-v3';
 
 var SHELL = [
   './',
