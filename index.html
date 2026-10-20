@@ -173,6 +173,7 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
   <nav class="tabbar" id="tabbar">
     <button data-tab="d745" class="on">Stok D744</button>
     <button data-tab="utara">Stok Utara</button>
+    <button data-tab="ibt">Stok IBT</button>
     <button data-tab="sumber">Sumber Data</button>
   </nav>
 </header>
@@ -209,6 +210,24 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
     </div>
     <div class="tablebox"><table id="tblUtara"><thead></thead><tbody></tbody></table>
       <div class="empty hide" id="emptyUtara">Tidak ada unit yang cocok.</div>
+    </div>
+  </section>
+
+  <!-- ============ TAB STOK IBT ============ -->
+  <section id="pane-ibt" class="hide">
+    <div class="panel">
+      <div class="frow"><span class="flabel">Status</span><span id="statIbt" style="display:contents"></span></div>
+      <div class="frow"><span class="flabel">Plant</span><span id="plantIbt" style="display:contents"></span></div>
+      <div class="frow"><span class="flabel">Type</span><span id="typeIbt" style="display:contents"></span></div>
+      <div class="frow">
+        <span class="flabel">Cari</span>
+        <input class="search" id="qIbt" placeholder="rangka / mesin / RRN / deskripsi / warna…">
+        <button class="btn ghost sm" id="csvIbt">CSV</button>
+        <span class="counter"><b id="cntIbt">0</b> unit</span>
+      </div>
+    </div>
+    <div class="tablebox"><table id="tblIbt"><thead></thead><tbody></tbody></table>
+      <div class="empty hide" id="emptyIbt">Tidak ada unit yang cocok.</div>
     </div>
   </section>
 
@@ -250,6 +269,8 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
       <div class="kv"><span>Stok Utara — spreadsheet</span><b id="idUtaraTxt"></b></div>
       <div style="margin:6px 0"><input class="txt" id="idUtara" placeholder="ID atau tautan spreadsheet Stok Utara"></div>
       <div style="margin:6px 0"><input class="txt" id="shUtara" placeholder="nama lembar, mis. Stok"></div>
+      <div class="kv"><span>Stok IBT — RRN</span><b id="shRRNTxt"></b></div>
+      <div style="margin:6px 0"><input class="txt" id="shRRN" placeholder="nama lembar RRN, mis. RRN"></div>
       <div class="frow" style="margin-top:6px">
         <button class="btn" id="reload">Muat ulang data</button>
         <button class="btn ghost sm" id="saveId">Simpan sumber</button>
@@ -264,6 +285,7 @@ input.txt{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:
     <div class="panel">
       <div class="kv"><span>Stok D744</span><b id="szD744">—</b></div>
       <div class="kv"><span>Stok Utara</span><b id="szUtara">—</b></div>
+      <div class="kv"><span>RRN (Stok IBT)</span><b id="szRRN">—</b></div>
       <div class="kv"><span>Jadwal kapal</span><b id="szShip">—</b></div>
       <div class="frow" style="margin-top:6px">
         <button class="btn ghost sm" id="wipe">Hapus semua simpanan</button>
@@ -313,6 +335,9 @@ var DEF = {
   d745Sheet : 'STOCK OKTOBER',
   utaraId : '105Fk4W_ocTGC63iFkHaC_ttMrTznsiluiEQvwUCIQ7s',
   utaraSheet : 'Stok',
+  rrnSheet : 'RRN',
+  /* Stok IBT: semua cabang D740 s/d D790 */
+  ibtMin : 740, ibtMax : 790,
   /* Diisi alamat Web App Apps Script supaya SEMUA pengguna aplikasi ikut
      menulis ke sheet KAPAL. Dibiarkan kosong = tiap perangkat mengisi sendiri
      di tab Sumber Data. */
@@ -323,7 +348,7 @@ var DEF = {
      tersisa di perangkat otomatis dibuang supaya tidak menimpa sumber baru. */
   srcVer : 2
 };
-var K = { d745:'stok_d745_v1', utara:'stok_utara_v1', ship:'jadwal_kapal_v1', cfg:'stok_cfg_v1' };
+var K = { d745:'stok_d745_v1', utara:'stok_utara_v1', rrn:'rrn_ibt_v1', ship:'jadwal_kapal_v1', cfg:'stok_cfg_v1' };
 
 /* ---------- util ---------- */
 function $(s){ return document.querySelector(s); }
@@ -450,7 +475,8 @@ var KEYS = {
   desc    : ['materialdescription','materialdesc','deskripsi','description','type'],
   plant   : ['plant','cabang','outlet'],
   typeunit: ['typeunit','simplename','unit','tipe'],
-  jadwal  : ['jadwalkapal','jadwal','kapal']
+  jadwal  : ['jadwalkapal','jadwal','kapal'],
+  rrn     : ['rrnnumber','rrnno','rrn']
 };
 
 /* ---------- grup type dari Material Description ---------- */
@@ -811,11 +837,24 @@ function renderShipList(){
    ============================================================ */
 var DATA = {
   d745 : { head:[], rows:[], cols:[], src:'' },
-  utara: { head:[], rows:[], cols:[], src:'' }
+  utara: { head:[], rows:[], cols:[], src:'' },
+  ibt  : { head:[], rows:[], cols:[], src:'' }
 };
 var FILT = {
   d745 : { type:new Set(), q:'', sort:null, dir:1, all:false },
-  utara: { type:new Set(), plant:new Set(), q:'', sort:null, dir:1, all:false }
+  utara: { type:new Set(), plant:new Set(), q:'', sort:null, dir:1, all:false },
+  ibt  : { type:new Set(), plant:new Set(), stat:new Set(), q:'', sort:null, dir:1, all:false }
+};
+/* baris mentah lembar Stok & RRN disimpan supaya tab IBT tidak perlu
+   mengambil ulang data yang sudah diunduh untuk tab Stok Utara */
+var RAW = { stok:null, rrn:null };
+
+/* satu tempat untuk id elemen tiap tab, supaya menambah tab tidak perlu
+   menyebar nama elemen ke mana-mana */
+var EL = {
+  d745 : {tbl:'#tblD745', cnt:'#cntD745', empty:'#emptyD745', type:'#typeD745', plant:null, stat:null, q:'#qD745', csv:'#csvD745'},
+  utara: {tbl:'#tblUtara',cnt:'#cntUtara',empty:'#emptyUtara',type:'#typeUtara',plant:'#plantUtara',stat:null, q:'#qUtara',csv:'#csvUtara'},
+  ibt  : {tbl:'#tblIbt',  cnt:'#cntIbt',  empty:'#emptyIbt',  type:'#typeIbt',  plant:'#plantIbt',  stat:'#statIbt', q:'#qIbt',  csv:'#csvIbt'}
 };
 var LIMIT = 600;
 
@@ -912,8 +951,119 @@ function buildUtara(rows){
   DATA.utara.head=head; DATA.utara.rows=out; DATA.utara.cols=cols;
 }
 
-/* ---------- aturan sorot baris (sama untuk kedua tab) ---------- */
-var HOME = /(SY-?MALALAYANG|D740|D741|D743|D744|D745|D761)/;
+/* ============================================================
+   STOK IBT — stok semua cabang D740..D790 digabung dengan RRN-nya
+   ============================================================ */
+function isIBT(plant){
+  var m = String(plant||'').toUpperCase().trim().match(/^D(\d{3})$/);
+  if(!m) return false;
+  var v = +m[1];
+  return v >= DEF.ibtMin && v <= DEF.ibtMax;
+}
+
+/* sisakan baris RRN milik cabang IBT saja */
+function rrnIBT(rows){
+  if(!rows || rows.length < 2) return rows || [];
+  var map = headIndex(rows[0].map(function(h){ return String(h||'').trim(); }));
+  var jPl = pick(map, ['plant','destination']), jDe = pick(map, ['destination']);
+  if(jPl < 0 && jDe < 0) return rows;
+  return [rows[0]].concat(rows.slice(1).filter(function(r){
+    return isIBT(up(jPl>=0 ? r[jPl] : r[jDe]));
+  }));
+}
+
+function buildIBT(stokRows, rrnRows){
+  if(!stokRows || stokRows.length < 2) return;
+  var sHead = stokRows[0].map(function(h){ return String(h||'').trim(); });
+  var sMap  = headIndex(sHead);
+  var iPl = pick(sMap, KEYS.plant),  iCh = pick(sMap, KEYS.chassis),
+      iEn = pick(sMap, KEYS.engine), iLo = pick(sMap, KEYS.loc),
+      iDs = pick(sMap, KEYS.desc),   iRR = pick(sMap, KEYS.rrn);
+
+  /* kolom = Status + seluruh kolom lembar Stok + Jadwal Kapal */
+  var cols = [{ t:'Status', i:0, w:'c' }];
+  sHead.forEach(function(h,k){
+    var nk_ = nk(h);
+    cols.push({ t:h, i:k+1,
+      loc  : KEYS.loc.indexOf(nk_)>=0,
+      mono : /serialnumber|nomesin|nomormesin|equipment/.test(nk_),
+      w    : /^(age|umur)$/.test(nk_) ? 'num' : '' });
+  });
+  cols.push({ t:'Jadwal Kapal', i:-1, ship:true });
+
+  var out = [], rrnAda = {}, rangkaAda = {};
+  stokRows.slice(1).forEach(function(r){
+    var pl = (iPl>=0 ? String(r[iPl]||'') : '').toUpperCase().trim();
+    if(!isIBT(pl)) return;
+    var ch = iCh>=0?cl(r[iCh]):'', rr = iRR>=0?cl(r[iRR]):'';
+    if(rr) rrnAda[up(rr)] = 1;
+    if(ch) rangkaAda[up(ch)] = 1;
+    out.push({
+      r  : ['STOK'].concat(r),
+      plant: pl, stat:'STOK',
+      ch : ch, en: iEn>=0?cl(r[iEn]):'',
+      lo : iLo>=0?cl(r[iLo]):'', jd:'',
+      ty : typeOf(iDs>=0?r[iDs]:'', '')
+    });
+  });
+
+  /* RRN digabung di bawah: hanya yang belum muncul sebagai unit stok */
+  var lewat = 0;
+  if(rrnRows && rrnRows.length > 1){
+    var rHead = rrnRows[0].map(function(h){ return String(h||'').trim(); });
+    var rMap  = headIndex(rHead);
+    var jRR = pick(rMap, ['rrnnumber','rrnno','rrn']),
+        jPl = pick(rMap, ['plant','destination']),
+        jDe = pick(rMap, ['destination']),
+        jMt = pick(rMap, ['upgradematerial','material']),
+        jDs = pick(rMap, ['materialdescr','materialdescription','materialdesc']),
+        jCi = pick(rMap, ['sdcolor','sapcolorid','colorid']),
+        jCd = pick(rMap, ['colordescr','colordescription','sapcolordescription']),
+        jEq = pick(rMap, ['equipment','serialnumber','norangka']),
+        jTg = pick(rMap, ['plandeliverydate','deliverydate','tanggal']);
+    /* kolom lembar Stok yang diisi dari RRN */
+    var kPl = iPl, kMt = pick(sMap, ['material','kodematerial']),
+        kDs = iDs, kCi = pick(sMap, ['sapcolorid','colorid','kodewarna']),
+        kCd = pick(sMap, ['sapcolordescription','colordescription','warna']),
+        kSe = iCh, kLo = iLo, kRR = iRR;
+
+    rrnRows.slice(1).forEach(function(r){
+      var pl = up(jPl>=0 ? r[jPl] : (jDe>=0 ? r[jDe] : ''));
+      if(!isIBT(pl)) return;
+      var rr = jRR>=0?cl(r[jRR]):'', eq = jEq>=0?cl(r[jEq]):'';
+      /* sudah diproduksi dan sudah ada di daftar stok — jangan dihitung dua kali */
+      if((rr && rrnAda[up(rr)]) || (eq && rangkaAda[up(eq)])){ lewat++; return; }
+
+      var baris = new Array(sHead.length).fill('');
+      function isi(k, v){ if(k>=0) baris[k] = v==null?'':v; }
+      isi(kPl, pl);
+      isi(kMt, jMt>=0?cl(r[jMt]):'');
+      isi(kDs, jDs>=0?cl(r[jDs]):'');
+      isi(kCi, jCi>=0?cl(r[jCi]):'');
+      isi(kCd, jCd>=0?cl(r[jCd]):'');
+      isi(kSe, eq);
+      isi(kRR, rr);
+      /* Lokasi diisi tanggal rencana kirim — sesuai kebiasaan: lokasi berupa
+         tanggal berarti unit masih menunggu produksi */
+      isi(kLo, jTg>=0?cl(r[jTg]):'');
+
+      out.push({
+        r  : ['RRN'].concat(baris),
+        plant: pl, stat:'RRN',
+        ch : eq, en: '',
+        lo : jTg>=0?cl(r[jTg]):'', jd:'',
+        ty : typeOf(jDs>=0?r[jDs]:'', '')
+      });
+    });
+  }
+  DATA.ibt.head = ['Status'].concat(sHead);
+  DATA.ibt.rows = out;
+  DATA.ibt.cols = cols;
+  DATA.ibt.lewat = lewat;
+}
+
+/* ---------- aturan sorot baris (sama untuk semua tab) ---------- */
+var HOME = /(SY-?MALALAYANG|D7\d\d)/;
 function rowClass(loc, jadwal){
   var L = String(loc==null?'':loc).toUpperCase();
   var flat = L.replace(/\s+/g,'');
@@ -933,7 +1083,8 @@ function filtered(tab){
   var q = F.q.trim().toLowerCase();
   var rows = D.rows.filter(function(o){
     if(F.type.size && !F.type.has(o.ty)) return false;
-    if(tab==='utara' && F.plant.size && !F.plant.has(o.plant)) return false;
+    if(F.plant && F.plant.size && !F.plant.has(o.plant)) return false;
+    if(F.stat && F.stat.size && !F.stat.has(o.stat)) return false;
     if(q){
       var hay = o.r.map(cl).join(' ').toLowerCase()+' '+shipFor(o).toLowerCase();
       var parts = q.split(/\s+/);
@@ -956,10 +1107,11 @@ function filtered(tab){
 
 function renderTable(tab){
   var D = DATA[tab], F = FILT[tab];
-  var tbl = $(tab==='d745'?'#tblD745':'#tblUtara');
+  var e = EL[tab];
+  var tbl = $(e.tbl);
   var thead = tbl.tHead, tbody = tbl.tBodies[0];
   var rows = filtered(tab);
-  $(tab==='d745'?'#cntD745':'#cntUtara').textContent = rows.length;
+  $(e.cnt).textContent = rows.length;
 
   /* kepala */
   thead.innerHTML = '<tr>'+D.cols.map(function(c,i){
@@ -998,16 +1150,19 @@ function renderTable(tab){
   tbody.innerHTML = html;
   var mb = document.getElementById('more-'+tab);
   if(mb) mb.onclick = function(){ F.all = true; renderTable(tab); };
-  $(tab==='d745'?'#emptyD745':'#emptyUtara').classList.toggle('hide', rows.length>0);
+  $(e.empty).classList.toggle('hide', rows.length>0);
 }
 
 function renderPills(tab){
-  var D = DATA[tab], F = FILT[tab];
-  function pills(host, values, set, allLabel){
+  var D = DATA[tab], F = FILT[tab], e = EL[tab];
+  function pills(host, sel, set, allLabel){
     var counts = {};
-    D.rows.forEach(function(o){ var v = host==='plant'?o.plant:o.ty; if(v) counts[v]=(counts[v]||0)+1; });
-    var el = $( tab==='d745' ? '#typeD745' : (host==='plant' ? '#plantUtara' : '#typeUtara') );
-    var keys = Object.keys(counts).sort(host==='plant' ? undefined : typeSort);
+    D.rows.forEach(function(o){
+      var v = host==='plant' ? o.plant : (host==='stat' ? o.stat : o.ty);
+      if(v) counts[v]=(counts[v]||0)+1;
+    });
+    var el = $(sel);
+    var keys = Object.keys(counts).sort(host==='type' ? typeSort : undefined);
     el.innerHTML = '<button class="pill all'+(set.size?'':' on')+'" data-all="1">'+allLabel+'</button>'+
       keys.map(function(k){
         return '<button class="pill'+(set.has(k)?' on':'')+'" data-v="'+esc(k)+'">'+esc(k)+'<small>'+counts[k]+'</small></button>';
@@ -1020,12 +1175,13 @@ function renderPills(tab){
       };
     });
   }
-  if(tab==='utara') pills('plant', null, F.plant, 'Semua plant');
-  pills('type', null, F.type, 'Semua type');
+  if(e.stat)  pills('stat',  e.stat,  F.stat,  'Semua status');
+  if(e.plant) pills('plant', e.plant, F.plant, 'Semua plant');
+  pills('type', e.type, F.type, 'Semua type');
 }
 
 function renderAll(){
-  ['d745','utara'].forEach(function(t){ if(DATA[t].cols.length){ renderPills(t); renderTable(t); } });
+  ['d745','utara','ibt'].forEach(function(t){ if(DATA[t].cols.length){ renderPills(t); renderTable(t); } });
   updateSizes();
 }
 
@@ -1042,7 +1198,7 @@ function exportCSV(tab){
     })));
   });
   var txt = '\uFEFF'+out.join('\n');
-  var name = (tab==='d745'?'Stok_D744_':'Stok_Utara_')+new Date().toISOString().slice(0,10)+'.csv';
+  var name = (tab==='d745'?'Stok_D744_':tab==='ibt'?'Stok_IBT_':'Stok_Utara_')+new Date().toISOString().slice(0,10)+'.csv';
   if(window.AndroidSaver && AndroidSaver.saveText){ AndroidSaver.saveText(name, txt); toast('Tersimpan di folder Download'); return; }
   var b = new Blob([txt], {type:'text/csv;charset=utf-8'});
   var a = document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; a.click();
@@ -1056,21 +1212,23 @@ function bawaan(){
   var lama = lsGet(K.cfg) || {};
   return { srcVer:DEF.srcVer,
     d745Id:DEF.d745Id, d745Sheet:DEF.d745Sheet,
-    utaraId:DEF.utaraId, utaraSheet:DEF.utaraSheet,
+    utaraId:DEF.utaraId, utaraSheet:DEF.utaraSheet, rrnSheet:DEF.rrnSheet,
     kapalUrl: lama.kapalUrl || DEF.kapalUrl || '' };   /* alamat Apps Script tidak ikut direset */
 }
 function cfg(){
   var def = bawaan(), sv = lsGet(K.cfg);
   if(!sv || sv.srcVer !== DEF.srcVer){
     /* sumber bawaan berubah — ID lama dan simpanan lama dibuang */
-    if(sv){ try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); }catch(e){} }
+    if(sv){ try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); localStorage.removeItem(K.rrn); }catch(e){} }
     lsSet(K.cfg, def);
     return def;
   }
   return Object.assign(def, sv);
 }
 function srcKey(c, tab){
-  return DEF.srcVer+'|'+(tab==='d745' ? c.d745Id+'|'+c.d745Sheet : c.utaraId+'|'+c.utaraSheet);
+  if(tab==='d745') return DEF.srcVer+'|'+c.d745Id+'|'+c.d745Sheet;
+  if(tab==='rrn')  return DEF.srcVer+'|'+c.utaraId+'|'+(c.rrnSheet||DEF.rrnSheet);
+  return DEF.srcVer+'|'+c.utaraId+'|'+c.utaraSheet;
 }
 function setStat(cls, txt){ $('#stat').innerHTML = '<span class="dot '+cls+'"></span>'+esc(txt); }
 
@@ -1082,6 +1240,7 @@ function loadAll(force){
     var s = lsGet(tab==='d745'?K.d745:K.utara), nama = tab==='d745'?'D744':'Utara';
     /* simpanan dari sumber lain tidak dipakai, supaya data lama tidak muncul lagi */
     if(s && s.rows && s.src === srcKey(c, tab)){
+      if(tab==='utara') RAW.stok = s.rows;
       (tab==='d745'?buildD745:buildUtara)(s.rows);
       info.push(nama+': simpanan '+(s.at?fmtDMY(new Date(s.at)):''));
       return true;
@@ -1096,17 +1255,37 @@ function loadAll(force){
   }).catch(function(e){ if(!useCache('d745')) info.push('D744 gagal: '+e.message); });
 
   var p2 = fetchSheet(c.utaraId, c.utaraSheet).then(function(rows){
+    RAW.stok = rows;
     buildUtara(rows);
     lsSet(K.utara, {at:Date.now(), src:srcKey(c,'utara'), rows:rows});
     info.push('Utara: '+(rows.length-1)+' baris daring dari lembar "'+c.utaraSheet+'"');
   }).catch(function(e){ if(!useCache('utara')) info.push('Utara gagal: '+e.message); });
 
-  return Promise.all([p1,p2]).then(function(){
+  var p3 = fetchSheet(c.utaraId, c.rrnSheet||DEF.rrnSheet).then(function(rows){
+    RAW.rrn = rows;
+    /* yang disimpan hanya baris cabang IBT — lembar RRN nasional terlalu besar
+       untuk simpanan perangkat, dan tab lain tidak memakainya */
+    lsSet(K.rrn, {at:Date.now(), src:srcKey(c,'rrn'), rows:rrnIBT(rows)});
+    info.push('RRN: '+(rows.length-1)+' baris daring dari lembar "'+(c.rrnSheet||DEF.rrnSheet)+'"');
+  }).catch(function(e){
+    var sv = lsGet(K.rrn);
+    if(sv && sv.rows && sv.src === srcKey(c,'rrn')){
+      RAW.rrn = sv.rows;
+      info.push('RRN: simpanan '+(sv.at?fmtDMY(new Date(sv.at)):''));
+    } else info.push('RRN gagal: '+e.message);
+  });
+
+  return Promise.all([p1,p2,p3]).then(function(){
+    buildIBT(RAW.stok, RAW.rrn);
+    if(DATA.ibt.rows.length){
+      info.push('IBT: '+DATA.ibt.rows.length+' baris'+
+        (DATA.ibt.lewat ? ' ('+DATA.ibt.lewat+' RRN sudah jadi unit stok, tidak dihitung dua kali)' : ''));
+    }
     renderAll();
     var online = navigator.onLine;
     var ok = DATA.d745.rows.length || DATA.utara.rows.length;
     setStat(ok?(online?'ok':'off'):'err',
-      ok ? (DATA.d745.rows.length+' D744 · '+DATA.utara.rows.length+' Utara'+(online?'':' · luring')) : 'data tidak tersedia');
+      ok ? (DATA.d745.rows.length+' D744 · '+DATA.utara.rows.length+' Utara · '+DATA.ibt.rows.length+' IBT'+(online?'':' · luring')) : 'data tidak tersedia');
     $('#srcInfo').innerHTML = info.map(esc).join('<br>');
   });
 }
@@ -1114,6 +1293,7 @@ function loadAll(force){
 function updateSizes(){
   $('#szD744').textContent = lsSize(K.d745);
   $('#szUtara').textContent = lsSize(K.utara);
+  $('#szRRN').textContent = lsSize(K.rrn);
   $('#szShip').textContent = lsSize(K.ship);
 }
 
@@ -1123,7 +1303,7 @@ function updateSizes(){
 $('#tabbar').addEventListener('click', function(e){
   var b = e.target.closest('button[data-tab]'); if(!b) return;
   $$('#tabbar button').forEach(function(x){ x.classList.toggle('on', x===b); });
-  ['d745','utara','sumber'].forEach(function(t){ $('#pane-'+t).classList.toggle('hide', t!==b.dataset.tab); });
+  ['d745','utara','ibt','sumber'].forEach(function(t){ $('#pane-'+t).classList.toggle('hide', t!==b.dataset.tab); });
   window.scrollTo(0,0);
 });
 
@@ -1134,10 +1314,10 @@ function onQ(tab, el){
     deb = setTimeout(function(){ FILT[tab].q = el.value; FILT[tab].all=false; renderTable(tab); }, 180);
   });
 }
-onQ('d745', $('#qD745'));
-onQ('utara', $('#qUtara'));
-$('#csvD745').onclick = function(){ exportCSV('d745'); };
-$('#csvUtara').onclick = function(){ exportCSV('utara'); };
+['d745','utara','ibt'].forEach(function(t){
+  onQ(t, $(EL[t].q));
+  $(EL[t].csv).onclick = function(){ exportCSV(t); };
+});
 
 $('#pick').onclick = function(){ $('#file').click(); };
 $('#drop').addEventListener('click', function(e){ if(e.target.id==='drop') $('#file').click(); });
@@ -1168,12 +1348,14 @@ $('#saveId').onclick = function(){
   if(b) c.utaraId = b;
   if(sa) c.d745Sheet = sa;
   if(sb) c.utaraSheet = sb;
+  var sr = $('#shRRN').value.trim();
+  if(sr) c.rrnSheet = sr;
   c.srcVer = DEF.srcVer;
-  try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); }catch(e){}
+  try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); localStorage.removeItem(K.rrn); }catch(e){}
   lsSet(K.cfg, c); showIds(); loadAll(true); toast('Sumber disimpan');
 };
 $('#resetId').onclick = function(){
-  try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); }catch(e){}
+  try{ localStorage.removeItem(K.d745); localStorage.removeItem(K.utara); localStorage.removeItem(K.rrn); }catch(e){}
   lsSet(K.cfg, bawaan()); showIds(); loadAll(true); toast('Kembali ke sumber bawaan');
 };
 $('#pickStok').onclick = function(){ $('#fileStok').click(); };
@@ -1183,13 +1365,15 @@ $('#fileStok').onchange = function(){
   sheetRows(f).then(function(rows){
     var head = (rows[0]||[]).map(nk).join('|');
     var c = cfg();
-    if(/\bplant\b/.test(head) && /functionallocation/.test(head)){ buildUtara(rows); lsSet(K.utara,{at:Date.now(),src:srcKey(c,'utara'),rows:rows}); toast('Stok Utara dimuat dari berkas'); }
+    if(/\bplant\b/.test(head) && /functionallocation/.test(head)){ RAW.stok = rows; buildUtara(rows); lsSet(K.utara,{at:Date.now(),src:srcKey(c,'utara'),rows:rows}); toast('Stok Utara dimuat dari berkas'); }
+    else if(/rrnnumber/.test(head) && /(plandeliverydate|upgradematerial)/.test(head)){ RAW.rrn = rows; lsSet(K.rrn,{at:Date.now(),src:srcKey(c,'rrn'),rows:rows}); toast('RRN dimuat dari berkas'); }
     else { buildD745(rows); lsSet(K.d745,{at:Date.now(),src:srcKey(c,'d745'),rows:rows}); toast('Stok D744 dimuat dari berkas'); }
+    buildIBT(RAW.stok, RAW.rrn);
     renderAll();
   }).catch(function(e){ toast('Berkas tidak terbaca'); });
 };
 $('#wipe').onclick = function(){
-  [K.d745,K.utara,K.ship].forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+  [K.d745,K.utara,K.rrn,K.ship].forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
   SHIP.files=[]; buildShipIndex(); renderShipList(); updateSizes(); toast('Simpanan dihapus');
 };
 
@@ -1197,6 +1381,8 @@ function showIds(){
   var c = cfg();
   $('#idD745Txt').textContent  = 'lembar "'+c.d745Sheet+'"';
   $('#idUtaraTxt').textContent = 'lembar "'+c.utaraSheet+'"';
+  $('#shRRNTxt').textContent = 'lembar "'+(c.rrnSheet||DEF.rrnSheet)+'"';
+  $('#shRRN').value = c.rrnSheet || DEF.rrnSheet;
   $('#idD745').value  = c.d745Id;   $('#shD745').value  = c.d745Sheet;
   $('#idUtara').value = c.utaraId;  $('#shUtara').value = c.utaraSheet;
   $('#kapalUrl').value = c.kapalUrl || '';
